@@ -1,0 +1,17 @@
+{
+  "domain": "google_calendar",
+  "name": "Google Calendar",
+  "version": "1.0.0",
+  "documentation": "https://github.com/alexanderznamensky/google-calendar",
+  "issue_tracker": "https://github.com/alexanderznamensky/google-calendar/issues",
+  "requirements": [
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-oauthlib",
+    "python-dateutil"
+  ],
+  "dependencies": ["http"],
+  "codeowners": ["@alexanderznamensky"],
+  "config_flow": true,
+  "iot_class": "cloud_polling"
+}

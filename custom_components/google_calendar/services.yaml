@@ -1,0 +1,43 @@
+start_oauth:
+  name: Запустить авторизацию Google Calendar
+  description: Создаёт ссылку OAuth-авторизации Google и после подтверждения сохраняет token.json.
+
+delete_events:
+  name: Удалить события Google Calendar
+  description: Удаляет события Google Calendar за период по совпадению текста в summary.
+  fields:
+    start_date:
+      name: Начальная дата
+      description: Например 2026-01-01
+      required: true
+      selector:
+        text:
+
+    end_date:
+      name: Конечная дата
+      description: Например 2026-12-31
+      required: true
+      selector:
+        text:
+
+    summary_contains:
+      name: Что искать в summary
+      description: Несколько значений через запятую. Например Алмател, ISP Алмател
+      required: true
+      selector:
+        text:
+
+    calendar_id:
+      name: Calendar ID
+      description: Обычно primary. Можно оставить пустым, тогда будет взято значение из настроек интеграции.
+      required: false
+      selector:
+        text:
+
+    dry_run:
+      name: Только проверить
+      description: Найти события, но не удалять.
+      required: false
+      default: true
+      selector:
+        boolean:

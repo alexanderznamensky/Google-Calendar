@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Google Calendar",
+        "description": "Настройте файлы авторизации Google Calendar.",
+        "data": {
+          "credentials_file": "Файл credentials.json относительно /config",
+          "token_file": "Файл token.json относительно /config",
+          "calendar_id": "Calendar ID",
+          "base_url": "Адрес Home Assistant для OAuth callback"
+        }
+      }
+    },
+    "error": {
+      "credentials_not_found": "Файл credentials.json не найден"
+    },
+    "abort": {
+      "already_configured": "Интеграция уже настроена"
+    }
+  }
+}
