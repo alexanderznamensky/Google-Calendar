@@ -3,20 +3,43 @@
     "step": {
       "user": {
         "title": "Google Calendar",
-        "description": "Настройте файлы авторизации Google Calendar.",
+        "description": "Настройте файлы авторизации Google. После сохранения Home Assistant откроет стандартную OAuth-авторизацию Google через My Home Assistant.",
         "data": {
           "credentials_file": "Файл credentials.json относительно /config",
           "token_file": "Файл token.json относительно /config",
-          "calendar_id": "Calendar ID",
-          "base_url": "Адрес Home Assistant для OAuth callback"
+          "calendar_id": "Calendar ID"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторная авторизация",
+        "description": "Интеграции Google Calendar требуется повторно авторизовать аккаунт Google. После подтверждения будет использован стандартный OAuth-механизм Home Assistant через My Home Assistant."
+      }
+    },
+    "error": {
+      "credentials_not_found": "Файл credentials.json не найден",
+      "credentials_invalid": "Файл credentials.json имеет неверный формат"
+    },
+    "abort": {
+      "already_configured": "Интеграция уже настроена",
+      "reauth_successful": "Повторная авторизация успешно завершена",
+      "reauth_entry_missing": "Не удалось найти настраиваемую интеграцию",
+      "oauth_failed": "Авторизация Google не завершена"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Настройки Google Calendar",
+        "description": "Выберите список Google Tasks, который будет использовать sensor.google_tasks.",
+        "data": {
+          "task_list_id": "Список Google Tasks"
         }
       }
     },
     "error": {
-      "credentials_not_found": "Файл credentials.json не найден"
-    },
-    "abort": {
-      "already_configured": "Интеграция уже настроена"
+      "token_not_found": "Google не авторизован. Выполните повторную авторизацию интеграции Google Calendar.",
+      "tasks_unavailable": "Не удалось получить списки Google Tasks. Проверьте Google Tasks API и выполните повторную авторизацию интеграции.",
+      "no_task_lists": "Google Tasks не вернул ни одного списка задач."
     }
   }
 }

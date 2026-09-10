@@ -6,36 +6,26 @@ from datetime import datetime, time
 from typing import Any
 
 import voluptuous as vol
-
-from aiohttp import web
-
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.components.http import HomeAssistantView
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
+from .api import get_calendar_service
 from .const import (
-    DOMAIN,
-    CONF_CREDENTIALS_FILE,
-    CONF_TOKEN_FILE,
     CONF_CALENDAR_ID,
-    CONF_BASE_URL,
-    CALLBACK_PATH,
+    CONF_TOKEN_FILE,
+    DOMAIN,
     SCOPES,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_START_OAUTH = "start_oauth"
+PLATFORMS = [Platform.SENSOR]
 SERVICE_DELETE_EVENTS = "delete_events"
-
-START_OAUTH_SCHEMA = vol.Schema({})
 
 DELETE_EVENTS_SCHEMA = vol.Schema(
     {
@@ -68,36 +58,6 @@ def _parse_local_datetime(value: str, is_end: bool = False) -> str:
     return dt_obj.isoformat()
 
 
-def _load_credentials(hass: HomeAssistant, token_file: str) -> Credentials:
-    token_path = hass.config.path(token_file)
-
-    if not os.path.exists(token_path):
-        raise FileNotFoundError(
-            f"Не найден token.json: {token_path}. "
-            f"Сначала выполните сервис {DOMAIN}.start_oauth."
-        )
-
-    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(token_path, "w", encoding="utf-8") as token:
-                token.write(creds.to_json())
-        else:
-            raise RuntimeError(
-                "Google token недействителен и не может быть обновлён. "
-                f"Запустите сервис {DOMAIN}.start_oauth повторно."
-            )
-
-    return creds
-
-
-def _get_calendar_service(hass: HomeAssistant, token_file: str):
-    creds = _load_credentials(hass, token_file)
-    return build("calendar", "v3", credentials=creds)
-
-
 def _delete_events_sync(
     hass: HomeAssistant,
     token_file: str,
@@ -107,11 +67,10 @@ def _delete_events_sync(
     summary_contains: str,
     dry_run: bool,
 ) -> dict[str, Any]:
-    service = _get_calendar_service(hass, token_file)
+    service = get_calendar_service(hass, token_file)
 
     time_min = _parse_local_datetime(start_date, is_end=False)
     time_max = _parse_local_datetime(end_date, is_end=True)
-
     search_terms = [item.strip() for item in summary_contains.split(",") if item.strip()]
 
     if not search_terms:
@@ -137,7 +96,6 @@ def _delete_events_sync(
         )
 
         events = events_result.get("items", [])
-
         for event in events:
             summary = event.get("summary", "")
             event_id = event.get("id")
@@ -147,11 +105,7 @@ def _delete_events_sync(
                 continue
 
             if any(term in summary for term in search_terms):
-                item = {
-                    "id": event_id,
-                    "summary": summary,
-                    "start": start,
-                }
+                item = {"id": event_id, "summary": summary, "start": start}
                 matched.append(item)
 
                 if not dry_run:
@@ -178,191 +132,61 @@ def _delete_events_sync(
     }
 
 
-def _create_oauth_url_sync(
-    credentials_path: str,
-    redirect_uri: str,
-    state: str,
-) -> tuple[str, Flow]:
-    flow = Flow.from_client_secrets_file(
-        credentials_path,
-        scopes=SCOPES,
-        redirect_uri=redirect_uri,
-    )
 
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-        state=state,
-    )
+def _token_requires_reauth_sync(
+    hass: HomeAssistant,
+    token_file: str,
+) -> bool:
+    """Return True when the stored Google token is missing, invalid, or lacks required scopes."""
+    token_path = hass.config.path(token_file)
 
-    return auth_url, flow
+    if not os.path.exists(token_path):
+        return True
 
+    try:
+        creds = Credentials.from_authorized_user_file(token_path)
+    except (OSError, ValueError, TypeError):
+        return True
 
-def _fetch_token_sync(flow: Flow, code: str, token_path: str) -> None:
-    flow.fetch_token(code=code)
-    creds = flow.credentials
+    if not creds.has_scopes(SCOPES):
+        return True
 
-    with open(token_path, "w", encoding="utf-8") as token:
-        token.write(creds.to_json())
+    if creds.valid:
+        return False
 
-
-class GoogleCalendarOAuthCallbackView(HomeAssistantView):
-    """OAuth callback endpoint."""
-
-    url = CALLBACK_PATH
-    name = "api:gcal_cleanup:oauth2callback"
-    requires_auth = False
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self.hass = hass
-
-    async def get(self, request: web.Request) -> web.Response:
-        hass = request.app["hass"]
-
-        error = request.query.get("error")
-        code = request.query.get("code")
-        state = request.query.get("state")
-
-        if error:
-            return web.Response(text=f"Google OAuth error: {error}", status=400)
-
-        if not code or not state:
-            return web.Response(
-                text="OAuth callback error: отсутствует code или state.",
-                status=400,
-            )
-
-        oauth_flows = hass.data.get(DOMAIN, {}).get("oauth_flows", {})
-        oauth_data = oauth_flows.get(state)
-
-        if oauth_data is None:
-            return web.Response(
-                text="OAuth callback error: неизвестный state.",
-                status=400,
-            )
-
-        flow = oauth_data["flow"]
-        token_path = oauth_data["token_path"]
-
+    if creds.expired and creds.refresh_token:
         try:
-            await hass.async_add_executor_job(_fetch_token_sync, flow, code, token_path)
-            oauth_flows.pop(state, None)
+            from google.auth.transport.requests import Request
 
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Google Calendar авторизован",
-                    "message": f"Файл token.json создан: `{token_path}`",
-                    "notification_id": "gcal_cleanup_oauth_success",
-                },
-                blocking=False,
-            )
+            creds.refresh(Request())
+            with open(token_path, "w", encoding="utf-8") as token:
+                token.write(creds.to_json())
+            return False
+        except Exception:  # noqa: BLE001 - refresh failure must trigger HA reauth
+            _LOGGER.exception("Не удалось обновить Google OAuth token")
+            return True
 
-            return web.Response(
-                text=(
-                    "<html><body>"
-                    "<h2>Google Calendar авторизован</h2>"
-                    "<p>token.json успешно создан. Эту вкладку можно закрыть.</p>"
-                    "</body></html>"
-                ),
-                content_type="text/html",
-            )
-
-        except Exception as err:
-            _LOGGER.exception("Ошибка завершения Google OAuth")
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Ошибка Google Calendar OAuth",
-                    "message": str(err),
-                    "notification_id": "gcal_cleanup_oauth_error",
-                },
-                blocking=False,
-            )
-            return web.Response(text=f"Ошибка завершения OAuth: {err}", status=500)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Google Calendar custom integration from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault("entries", {})
-    hass.data[DOMAIN].setdefault("oauth_flows", {})
+    hass.data[DOMAIN].setdefault("reauth_started", set())
     hass.data[DOMAIN]["entries"][entry.entry_id] = entry
 
-    if not hass.data[DOMAIN].get("view_registered"):
-        hass.http.register_view(GoogleCalendarOAuthCallbackView(hass))
-        hass.data[DOMAIN]["view_registered"] = True
-
-    async def handle_start_oauth(call: ServiceCall) -> None:
-        credentials_file = entry.data[CONF_CREDENTIALS_FILE]
-        token_file = entry.data[CONF_TOKEN_FILE]
-        base_url = entry.data[CONF_BASE_URL]
-
-        credentials_path = hass.config.path(credentials_file)
-        token_path = hass.config.path(token_file)
-
-        if not os.path.exists(credentials_path):
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Google Calendar OAuth: credentials.json не найден",
-                    "message": f"Файл не найден: `{credentials_path}`",
-                    "notification_id": "gcal_cleanup_credentials_missing",
-                },
-                blocking=False,
-            )
-            return
-
-        redirect_uri = f"{base_url}{CALLBACK_PATH}"
-        state = entry.entry_id
-
-        try:
-            auth_url, flow = await hass.async_add_executor_job(
-                _create_oauth_url_sync,
-                credentials_path,
-                redirect_uri,
-                state,
-            )
-
-            hass.data[DOMAIN]["oauth_flows"][state] = {
-                "flow": flow,
-                "token_path": token_path,
-            }
-
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Авторизация Google Calendar",
-                    "message": (
-                        "Откройте ссылку и разрешите доступ к календарю:\n\n"
-                        f"[Авторизовать Google Calendar]({auth_url})\n\n"
-                        "Callback URL должен быть добавлен в Google Cloud:\n\n"
-                        f"`{redirect_uri}`"
-                    ),
-                    "notification_id": "gcal_cleanup_oauth_start",
-                },
-                blocking=False,
-            )
-
-        except Exception as err:
-            _LOGGER.exception("Ошибка запуска Google OAuth")
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Ошибка запуска Google OAuth",
-                    "message": str(err),
-                    "notification_id": "gcal_cleanup_oauth_start_error",
-                },
-                blocking=False,
-            )
+    token_file = entry.data[CONF_TOKEN_FILE]
+    needs_reauth = await hass.async_add_executor_job(
+        _token_requires_reauth_sync,
+        hass,
+        token_file,
+    )
+    if needs_reauth and entry.entry_id not in hass.data[DOMAIN]["reauth_started"]:
+        hass.data[DOMAIN]["reauth_started"].add(entry.entry_id)
+        entry.async_start_reauth_if_available(hass)
 
     async def handle_delete_events(call: ServiceCall) -> None:
-        token_file = entry.data[CONF_TOKEN_FILE]
         calendar_id = call.data.get(
             "calendar_id",
             entry.data.get(CONF_CALENDAR_ID, "primary"),
@@ -384,7 +208,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 dry_run,
             )
 
-            title = "Google Calendar: проверка удаления" if dry_run else "Google Calendar: события удалены"
+            title = (
+                "Google Calendar: проверка удаления"
+                if dry_run
+                else "Google Calendar: события удалены"
+            )
             message = (
                 f"Календарь: `{result['calendar_id']}`\n\n"
                 f"Период: `{result['start_date']}` — `{result['end_date']}`\n\n"
@@ -408,7 +236,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 },
                 blocking=False,
             )
-
             _LOGGER.info("Google Calendar cleanup result: %s", result)
 
         except Exception as err:
@@ -424,14 +251,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 blocking=False,
             )
 
-    if not hass.services.has_service(DOMAIN, SERVICE_START_OAUTH):
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_START_OAUTH,
-            handle_start_oauth,
-            schema=START_OAUTH_SCHEMA,
-        )
-
     if not hass.services.has_service(DOMAIN, SERVICE_DELETE_EVENTS):
         hass.services.async_register(
             DOMAIN,
@@ -440,10 +259,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             schema=DELETE_EVENTS_SCHEMA,
         )
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload Google Calendar custom integration."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        return False
+
     hass.data[DOMAIN]["entries"].pop(entry.entry_id, None)
-    hass.data[DOMAIN]["oauth_flows"].pop(entry.entry_id, None)
+    hass.data[DOMAIN].get("reauth_started", set()).discard(entry.entry_id)
+
+    if not hass.data[DOMAIN]["entries"]:
+        hass.services.async_remove(DOMAIN, SERVICE_DELETE_EVENTS)
+
     return True

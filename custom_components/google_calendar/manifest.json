@@ -1,17 +1,20 @@
 {
   "domain": "google_calendar",
   "name": "Google Calendar",
-  "version": "1.0.0",
+  "version": "1.4.1",
   "documentation": "https://github.com/alexanderznamensky/google-calendar",
   "issue_tracker": "https://github.com/alexanderznamensky/google-calendar/issues",
   "requirements": [
     "google-api-python-client",
-    "google-auth",
-    "google-auth-oauthlib",
-    "python-dateutil"
+    "google-auth"
   ],
-  "dependencies": ["http"],
-  "codeowners": ["@alexanderznamensky"],
+  "dependencies": [
+    "auth",
+    "my"
+  ],
+  "codeowners": [
+    "@alexanderznamensky"
+  ],
   "config_flow": true,
   "iot_class": "cloud_polling"
 }
