@@ -17,8 +17,6 @@
 
 - `google_calendar.delete_events` — поиск и удаление событий Google Calendar за указанный период по совпадению текста в `summary`.
 
-Интеграция полностью заменяет старую схему с `command_line` и отдельными Python-скриптами для этих четырёх сенсоров.
-
 ## Сенсоры
 
 ### `sensor.google_calendar_events`
@@ -118,8 +116,6 @@ Home Assistant
 → Home Assistant
 ```
 
-Отдельный сервис для запуска OAuth не используется.
-
 Если токен отсутствует, истёк без возможности обновления или не содержит необходимых scope, интеграция инициирует штатную повторную авторизацию Home Assistant.
 
 ## Настройка Google Cloud
@@ -160,8 +156,6 @@ https://my.home-assistant.io/redirect/oauth
   }
 }
 ```
-
-Не публикуйте `client_secret` и `token.json`.
 
 ## Установка
 
@@ -278,41 +272,11 @@ data:
 
 Если `calendar_id` не указан, используется Calendar ID из настроек интеграции.
 
-## Миграция со старых `command_line` сенсоров
-
-После проверки новых сущностей можно удалить старые `command_line` сенсоры и Python-скрипты:
-
-```text
-google_calendar.py
-google_holidays.py
-google_contact.py
-google_tasks.py
-```
-
-Старые отдельные файлы OAuth для Google Tasks также больше не требуются:
-
-```text
-credentials_tasks.json
-token_tasks.json
-```
-
-Новая интеграция использует один `credentials.json` и один `token.json` для Calendar и Tasks.
-
-Если старые `command_line` сущности ещё существуют в реестре Home Assistant, новые сущности могут временно получить суффиксы `_2`. После удаления старых сущностей можно вернуть новым исходные Entity ID.
-
 ## Хранение данных
 
 Интеграция не создаёт собственный большой кеш календаря в `.storage`.
 
 Она получает данные через Google API и хранит в Home Assistant только текущее состояние сенсоров.
-
-Файлы вида:
-
-```text
-/config/.storage/google.<entry_id>
-```
-
-относятся к штатной интеграции Google Calendar Home Assistant, а не к этой custom integration.
 
 ## Требования
 
@@ -328,20 +292,6 @@ Python-зависимости устанавливаются Home Assistant ав
 ```text
 google-api-python-client
 google-auth
-```
-
-## Репозиторий
-
-GitHub:
-
-```text
-https://github.com/alexanderznamensky/Google-Calendar
-```
-
-Issues:
-
-```text
-https://github.com/alexanderznamensky/Google-Calendar/issues
 ```
 
 ## Предупреждение
