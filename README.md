@@ -1,60 +1,261 @@
 # Google Calendar для Home Assistant
 
-Custom integration for Home Assistant.
+Пользовательская интеграция Home Assistant для работы с Google Calendar и Google Tasks.
 
-## Что делает
+Версия: **1.4.1**
 
-Интеграция создаёт сервисы:
+## Возможности
 
-- `gcal_cleanup.start_oauth`
-- `gcal_cleanup.delete_events`
+Интеграция создаёт четыре сенсора:
 
-`delete_events` удаляет события Google Calendar за указанный период, если `summary` содержит одно из указанных значений.
+- `sensor.google_calendar_events` — мероприятия на сегодня;
+- `sensor.google_calendar_holidays` — праздники на сегодня;
+- `sensor.google_calendar_contacts_birthdays` — дни рождения и события контактов;
+- `sensor.google_tasks` — задачи из выбранного списка Google Tasks.
 
-## Логика credentials
+Также интеграция предоставляет сервис:
 
-1. Если установлена штатная интеграция `Google Calendar` и в Home Assistant есть Application Credentials для домена `google`, интеграция использует их `client_id` и `client_secret`.
-2. Если штатные Google Application Credentials не найдены, интеграция показывает ручную форму, похожую на штатную форму Home Assistant: название, OAuth Client ID, OAuth Client Secret.
+- `google_calendar.delete_events` — поиск и удаление событий Google Calendar за указанный период по совпадению текста в `summary`.
 
-Важно: токен у этой интеграции отдельный. По умолчанию он сохраняется как:
+Интеграция полностью заменяет старую схему с `command_line` и отдельными Python-скриптами для этих четырёх сенсоров.
 
-`/config/gcal_cleanup_token.json`
+## Сенсоры
+
+### `sensor.google_calendar_events`
+
+Показывает мероприятия из выбранного календаря Google Calendar на текущий день.
+
+Атрибуты:
+
+- `text` — подробный текст со списком мероприятий.
+
+По умолчанию используется календарь:
+
+```text
+primary
+```
+
+Из списка мероприятий исключаются события, содержащие:
+
+- `день рождения`
+- `День рождения`
+- `Именины`
+- `Годовщина смерти`
+
+Интервал обновления: **60 секунд**.
+
+### `sensor.google_calendar_holidays`
+
+Показывает праздники на текущий день из календаря:
+
+```text
+ru.russian#holiday@group.v.calendar.google.com
+```
+
+Атрибуты:
+
+- `text` — подробный текст.
+
+Интервал обновления: **71 секунда**.
+
+### `sensor.google_calendar_contacts_birthdays`
+
+Показывает дни рождения и другие события контактов из календаря:
+
+```text
+addressbook#contacts@group.v.calendar.google.com
+```
+
+Атрибуты:
+
+- `text` — подробный текст.
+
+Интервал обновления: **92 секунды**.
+
+### `sensor.google_tasks`
+
+Показывает задачи Google Tasks из выбранного Task List.
+
+Атрибуты:
+
+- `text` — список задач;
+- `notes` — подробные описания задач.
+
+Интервал обновления: **104 секунды**.
+
+Список Google Tasks выбирается в настройках интеграции:
+
+```text
+Настройки → Устройства и службы → Google Calendar → Настроить
+```
+
+Интеграция сама получает доступные Task Lists из Google Tasks API и показывает их названия в выпадающем списке.
+
+## OAuth и права доступа
+
+Интеграция использует один OAuth-токен для двух API:
+
+```text
+https://www.googleapis.com/auth/calendar
+https://www.googleapis.com/auth/tasks
+```
+
+По умолчанию используются файлы:
+
+```text
+/config/credentials.json
+/config/token.json
+```
+
+Для OAuth используется штатный механизм Home Assistant.
+
+При первичной настройке или необходимости повторной авторизации Home Assistant открывает стандартный внешний OAuth flow:
+
+```text
+Home Assistant
+→ Google
+→ My Home Assistant
+→ Home Assistant
+```
+
+Отдельный сервис для запуска OAuth не используется.
+
+Если токен отсутствует, истёк без возможности обновления или не содержит необходимых scope, интеграция инициирует штатную повторную авторизацию Home Assistant.
+
+## Настройка Google Cloud
+
+В Google Cloud должны быть включены:
+
+- Google Calendar API;
+- Google Tasks API.
+
+Используйте OAuth 2.0 Client ID типа:
+
+```text
+Web application
+```
+
+В **Authorized redirect URIs** добавьте:
+
+```text
+https://my.home-assistant.io/redirect/oauth
+```
+
+Файл `credentials.json` должен соответствовать именно этому Web OAuth client.
+
+Пример структуры:
+
+```json
+{
+  "web": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "project_id": "YOUR_PROJECT_ID",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "redirect_uris": [
+      "https://my.home-assistant.io/redirect/oauth"
+    ]
+  }
+}
+```
+
+Не публикуйте `client_secret` и `token.json`.
 
 ## Установка
 
 Скопируйте папку:
 
-`custom_components/gcal_cleanup`
+```text
+google_calendar
+```
 
 в:
 
-`/config/custom_components/gcal_cleanup`
-
-Перезапустите Home Assistant.
-
-## Настройка
-
-Настройки → Устройства и службы → Добавить интеграцию → Google Calendar Cleanup.
-
-## OAuth
-
-После добавления интеграции вызовите сервис:
-
-```yaml
-action: gcal_cleanup.start_oauth
-data: {}
+```text
+/config/custom_components/google_calendar
 ```
 
-В уведомлении Home Assistant появится ссылка для авторизации Google.
+Итоговая структура:
 
-В Google Cloud в Authorized redirect URIs должен быть указан callback, который интеграция покажет в уведомлении, например:
+```text
+/config/custom_components/google_calendar/
+├── __init__.py
+├── api.py
+├── config_flow.py
+├── const.py
+├── coordinator.py
+├── manifest.json
+├── sensor.py
+├── services.yaml
+└── strings.json
+```
 
-`http://172.16.1.18:8123/api/gcal_cleanup/oauth2callback`
+После копирования файлов полностью перезапустите Home Assistant.
 
-## Проверка удаления
+## Добавление интеграции
+
+Откройте:
+
+```text
+Настройки
+→ Устройства и службы
+→ Добавить интеграцию
+→ Google Calendar
+```
+
+Укажите:
+
+- путь к `credentials.json`;
+- путь к `token.json`;
+- Calendar ID.
+
+Значения по умолчанию:
+
+```text
+credentials.json
+token.json
+primary
+```
+
+После этого Home Assistant запустит OAuth-авторизацию Google.
+
+## Выбор Google Tasks List
+
+После успешной авторизации откройте:
+
+```text
+Настройки
+→ Устройства и службы
+→ Google Calendar
+→ Настроить
+```
+
+Выберите нужный список Google Tasks.
+
+После сохранения интеграция автоматически перезагрузится.
+
+## Удаление событий Google Calendar
+
+Сервис:
+
+```text
+google_calendar.delete_events
+```
+
+Поддерживает:
+
+- начальную дату;
+- конечную дату;
+- поиск одного или нескольких фрагментов текста в `summary`;
+- выбор `calendar_id`;
+- безопасный режим `dry_run`.
+
+### Проверка без удаления
 
 ```yaml
-action: gcal_cleanup.delete_events
+action: google_calendar.delete_events
 data:
   start_date: "2026-01-01"
   end_date: "2026-12-31"
@@ -62,13 +263,93 @@ data:
   dry_run: true
 ```
 
-## Реальное удаление
+Интеграция найдёт подходящие события, но не удалит их.
+
+### Реальное удаление
 
 ```yaml
-action: gcal_cleanup.delete_events
+action: google_calendar.delete_events
 data:
   start_date: "2026-01-01"
   end_date: "2026-12-31"
   summary_contains: "Алмател, ISP Алмател"
   dry_run: false
+```
+
+Если `calendar_id` не указан, используется Calendar ID из настроек интеграции.
+
+## Миграция со старых `command_line` сенсоров
+
+После проверки новых сущностей можно удалить старые `command_line` сенсоры и Python-скрипты:
+
+```text
+google_calendar.py
+google_holidays.py
+google_contact.py
+google_tasks.py
+```
+
+Старые отдельные файлы OAuth для Google Tasks также больше не требуются:
+
+```text
+credentials_tasks.json
+token_tasks.json
+```
+
+Новая интеграция использует один `credentials.json` и один `token.json` для Calendar и Tasks.
+
+Если старые `command_line` сущности ещё существуют в реестре Home Assistant, новые сущности могут временно получить суффиксы `_2`. После удаления старых сущностей можно вернуть новым исходные Entity ID.
+
+## Хранение данных
+
+Интеграция не создаёт собственный большой кеш календаря в `.storage`.
+
+Она получает данные через Google API и хранит в Home Assistant только текущее состояние сенсоров.
+
+Файлы вида:
+
+```text
+/config/.storage/google.<entry_id>
+```
+
+относятся к штатной интеграции Google Calendar Home Assistant, а не к этой custom integration.
+
+## Требования
+
+- Home Assistant;
+- доступ к Интернету;
+- Google Cloud project;
+- Google Calendar API;
+- Google Tasks API;
+- OAuth 2.0 Web application credentials.
+
+Python-зависимости устанавливаются Home Assistant автоматически:
+
+```text
+google-api-python-client
+google-auth
+```
+
+## Репозиторий
+
+GitHub:
+
+```text
+https://github.com/alexanderznamensky/Google-Calendar
+```
+
+Issues:
+
+```text
+https://github.com/alexanderznamensky/Google-Calendar/issues
+```
+
+## Предупреждение
+
+Это пользовательская интеграция, не являющаяся частью официального Home Assistant Core.
+
+Перед массовым удалением событий рекомендуется сначала запускать `google_calendar.delete_events` с:
+
+```yaml
+dry_run: true
 ```
