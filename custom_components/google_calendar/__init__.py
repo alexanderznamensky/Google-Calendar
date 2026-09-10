@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
@@ -33,7 +33,7 @@ DELETE_EVENTS_SCHEMA = vol.Schema(
         vol.Required("end_date"): cv.string,
         vol.Required("summary_contains"): cv.string,
         vol.Optional("calendar_id"): cv.string,
-        vol.Optional("dry_run", default=True): cv.boolean,
+        vol.Optional("dry_run", default=False): cv.boolean,
     }
 )
 
@@ -186,7 +186,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN]["reauth_started"].add(entry.entry_id)
         entry.async_start_reauth_if_available(hass)
 
-    async def handle_delete_events(call: ServiceCall) -> None:
+    async def handle_delete_events(call: ServiceCall) -> dict[str, Any] | None:
         calendar_id = call.data.get(
             "calendar_id",
             entry.data.get(CONF_CALENDAR_ID, "primary"),
@@ -208,35 +208,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 dry_run,
             )
 
-            title = (
-                "Google Calendar: проверка удаления"
-                if dry_run
-                else "Google Calendar: события удалены"
-            )
-            message = (
-                f"Календарь: `{result['calendar_id']}`\n\n"
-                f"Период: `{result['start_date']}` — `{result['end_date']}`\n\n"
-                f"Поиск в summary: `{', '.join(result['summary_contains'])}`\n\n"
-                f"Найдено: **{result['matched_count']}**\n\n"
-                f"Удалено: **{result['deleted_count']}**\n\n"
-            )
-
-            if result["matched"]:
-                message += "События:\n\n"
-                for item in result["matched"]:
-                    message += f"- {item['summary']} | {item['start']}\n"
-
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": title,
-                    "message": message,
-                    "notification_id": "gcal_cleanup_delete_events",
-                },
-                blocking=False,
-            )
             _LOGGER.info("Google Calendar cleanup result: %s", result)
+
+            # Home Assistant покажет этот ответ прямо в
+            # Инструментарий разработчика -> Действия.
+            # Для вызовов без запроса ответа (например из автоматизации)
+            # ничего дополнительно не создаём.
+            if call.return_response:
+                return result
+            return None
 
         except Exception as err:
             _LOGGER.exception("Ошибка удаления событий Google Calendar")
@@ -250,6 +230,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 },
                 blocking=False,
             )
+            return None
 
     if not hass.services.has_service(DOMAIN, SERVICE_DELETE_EVENTS):
         hass.services.async_register(
@@ -257,6 +238,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_DELETE_EVENTS,
             handle_delete_events,
             schema=DELETE_EVENTS_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

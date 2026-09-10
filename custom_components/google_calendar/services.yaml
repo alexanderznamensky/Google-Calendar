@@ -34,6 +34,6 @@ delete_events:
       name: Только проверить
       description: Найти события, но не удалять.
       required: false
-      default: true
+      default: false
       selector:
         boolean:
