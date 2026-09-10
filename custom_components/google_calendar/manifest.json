@@ -1,7 +1,7 @@
 {
   "domain": "google_calendar",
   "name": "Google Calendar",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "documentation": "https://github.com/alexanderznamensky/google-calendar",
   "issue_tracker": "https://github.com/alexanderznamensky/google-calendar/issues",
   "requirements": [

@@ -1,11 +1,13 @@
 delete_events:
   name: Удалить события Google Calendar
   description: Удаляет события Google Calendar за период по совпадению текста в summary.
+
   fields:
     start_date:
       name: Начальная дата
       description: Например 2026-01-01
       required: true
+      example: "2026-01-01"
       selector:
         text:
 
@@ -13,6 +15,7 @@ delete_events:
       name: Конечная дата
       description: Например 2026-12-31
       required: true
+      example: "2026-12-31"
       selector:
         text:
 
@@ -20,6 +23,7 @@ delete_events:
       name: Что искать в summary
       description: Несколько значений через запятую. Например Алмател, ISP Алмател
       required: true
+      example: "тестовое мероприятие"
       selector:
         text:
 
@@ -27,6 +31,7 @@ delete_events:
       name: Calendar ID
       description: Обычно primary. Можно оставить пустым, тогда будет взято значение из настроек интеграции.
       required: false
+      example: "primary"
       selector:
         text:
 
@@ -35,5 +40,6 @@ delete_events:
       description: Найти события, но не удалять.
       required: false
       default: false
+      example: true
       selector:
         boolean:
